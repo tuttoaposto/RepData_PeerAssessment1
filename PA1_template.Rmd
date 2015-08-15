@@ -1,25 +1,97 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+#Download data  
+```{r, echo = TRUE, results = 'hide'}
+# Reproducible Research Peer Assessment #1
+
+# Create drectory to save data
+if (!file.exists("./RepData/data")) dir.create("./RepData/data")
+
+#Download zip file and unzip it if it is not in data folder
+if (!file.exists("./RepData/data/repdata-data-activity.zip")) {
+  
+  fileURL <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+  download.file(url = fileURL, destfile = "./RepData/data/repdata-data-activity.zip")
+  
+  unzip("./RepData/data/repdata-data-activity.zip", exdir = "./RepData/data")
+}
+```
+    
+#Read in data  
+```{r, echo = TRUE}
+act <- read.csv('./RepData/data/activity.csv', stringsAsFactors = F)  #17568 obs, 3 cols
+act$date <-as.Date(act$date, '%Y-%m-%d')
+str(act)
+head(act)
+tail(act)
+```
+    
+##Q1: What is mean total number of steps taken per day?  
+```{r, echo = TRUE}
+steps_per_day <- aggregate(x = act$steps, by = list(date = act$date), FUN = sum, na.rm = T)
+hist(steps_per_day$x, xlab = 'Total number of steps per day', main = 'Total number of steps taken per day')
+```
 
 
-## Loading and preprocessing the data
+```{r, echo = TRUE}
+mean = round(mean(steps_per_day$x),2)
+median = median(steps_per_day$x)
+```
+The mean and median of total number of steps taken per day are `r mean` and `r median` respectively.  
+    
+##Q2: What is the average daily activity pattern?  
+```{r, echo = TRUE}
+steps_per_int <- aggregate(act$steps, by = list(Interval = act$interval), FUN = mean, na.rm = T)
+Interval_Max = with(steps_per_int, Interval[x == max(x)])
+plot(steps_per_int$Interval, steps_per_int$x, xlab = '5-minute interval', ylab = 'Average number of steps taken', type = 'l')
+abline(v = Interval_Max, col ='blue')
+```
 
+The number of steps peaks at the `r Interval_Max`-min interval. People were more active around 8:30 am.  
+    
+##Q3: Imputing missing values 
+```{r, echo = TRUE}
+steps_miss <- sum(is.na(act$steps))
+```
+There are `r steps_miss` missing values in the dataset.   
 
+    
+The following code uses the mean of 5-min interval to impute number of steps missing in that interval:
+```{r, echo = TRUE}
+library(sqldf)
+act_impute <- sqldf('select case when a.steps is null then b.x
+                                 else a.steps end as steps_imp,
+                    a.date, a.interval, b.x
+                    from act a left join steps_per_int b on a.interval = b.Interval')
+str(act_impute)
 
-## What is mean total number of steps taken per day?
+#Total number of steps taken each day
+steps_per_day <- with(act_impute, aggregate(steps_imp, by = list(date = date), FUN = sum))
 
+#Histogram
+hist(steps_per_day$x, xlab = 'Total number of steps per day', main = 'Histogram of imputed total number of steps taken per day')
 
+#Mean and median of total number of steps taken each day
+options(scipen=999)
+mean = round(mean(steps_per_day$x), digits = 0)
+median = round(median(steps_per_day$x), digits =0)
+```
+The mean and median of total number of steps taken per day are both equal to `r mean`. Imputing the missing values with the mean per interval makes the mean and median closer to each other, i.e. distribution more symmetric.
+    
+    
+##Q4: Are there differences in activity patterns between weekdays and weekends?
 
-## What is the average daily activity pattern?
+```{r, echo = TRUE}
+#Weekend/weekday indicator
+act$wkend <- ifelse(weekdays(act$date, abbreviate = T) %in% c('Sat', 'Sun'), 'Weekend', 'Weekday')
+table(act$wkend, weekdays(act$date, abbreviate = T))
 
+#Average # steps per interval over all weekday days and all weekend days
+steps_per_int <- aggregate(steps ~ wkend + interval, data = act, FUN = "mean", na.rm = T)
 
-
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
+#Stacking time series plot
+library(ggplot2)
+g <- ggplot(data = steps_per_int, aes(x = interval, y = steps))
+g + geom_line(color = 'dark green', size = 1) +
+  facet_grid(wkend ~.) +
+  labs(x ='5-min interval', y = 'Number of steps', 
+       title = 'Activity pattern during weekdays vs weekends')
+```
